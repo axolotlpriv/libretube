@@ -151,7 +151,9 @@ class HomeViewModel : ViewModel() {
     private suspend fun loadRecommended(context: Context) {
         val authStore = TvAuthStore(context)
         if (!authStore.isLoggedIn()) {
-            recommended.updateIfChanged(null)
+            // clear any rows left over from a previous session, without re-notifying observers
+            // when the row is already empty
+            if (recommended.value != null) recommended.value = null
             return
         }
         runSafely(
