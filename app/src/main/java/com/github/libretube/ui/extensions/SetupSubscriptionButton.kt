@@ -4,7 +4,10 @@ import android.widget.TextView
 import androidx.core.view.isVisible
 import com.github.libretube.R
 import com.github.libretube.api.SubscriptionHelper
+import com.github.libretube.api.innertube.NotSignedInException
+import com.github.libretube.api.innertube.YouTubeAccount
 import com.github.libretube.constants.PreferenceKeys
+import com.github.libretube.extensions.toastFromMainDispatcher
 import com.github.libretube.helpers.PreferenceHelper
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.snackbar.Snackbar
@@ -51,20 +54,42 @@ fun TextView.setupSubscriptionButton(
     notificationBell?.setupNotificationBell(channelId)
 
     val setSubscriptionState : (Boolean) -> Unit = { subscribe ->
-        CoroutineScope(Dispatchers.IO).launch {
-            if (subscribe)
-                SubscriptionHelper.subscribe(
-                    channelId,
-                    channelName,
-                    channelAvatar,
-                    channelVerified
-                )
-            else
-                SubscriptionHelper.unsubscribe(channelId)
-        }
-        subscribed = subscribe
+        val previousState = subscribed
 
+        // update optimistically so the button stays responsive, then roll back if the account
+        // action turns out to have failed
+        subscribed = subscribe
         updateUIStateAndNotifyObservers()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = runCatching {
+                if (subscribe) {
+                    YouTubeAccount.subscribe(context, channelId)
+                    SubscriptionHelper.subscribe(
+                        channelId,
+                        channelName,
+                        channelAvatar,
+                        channelVerified
+                    )
+                } else {
+                    YouTubeAccount.unsubscribe(context, channelId)
+                    SubscriptionHelper.unsubscribe(channelId)
+                }
+            }
+
+            val error = result.exceptionOrNull() ?: return@launch
+            withContext(Dispatchers.Main) {
+                subscribed = previousState
+                updateUIStateAndNotifyObservers()
+            }
+            context.toastFromMainDispatcher(
+                if (error is NotSignedInException) {
+                    context.getString(R.string.youtube_sign_in_required)
+                } else {
+                    context.getString(R.string.youtube_action_failed)
+                }
+            )
+        }
     }
 
     setOnClickListener {

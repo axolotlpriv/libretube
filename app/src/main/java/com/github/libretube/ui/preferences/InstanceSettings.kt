@@ -14,6 +14,7 @@ import com.github.libretube.R
 import com.github.libretube.api.PipedMediaServiceRepository
 import com.github.libretube.api.RetrofitInstance
 import com.github.libretube.api.innertube.TvAuthStore
+import com.github.libretube.api.innertube.YouTubeAccount
 import com.github.libretube.api.obj.PipedInstance
 import com.github.libretube.constants.IntentData
 import com.github.libretube.constants.PreferenceKeys
@@ -135,6 +136,7 @@ class InstanceSettings : BasePreferenceFragment() {
 
         tvSignOut?.setOnPreferenceClickListener {
             tvAuthStore.clear()
+            YouTubeAccount.invalidate()
             refreshTvSignInUI()
             Toast.makeText(requireContext(), R.string.tv_sign_out, Toast.LENGTH_SHORT).show()
             true

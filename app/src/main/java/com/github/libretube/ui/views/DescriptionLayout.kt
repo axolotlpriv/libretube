@@ -2,6 +2,7 @@ package com.github.libretube.ui.views
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.text.util.Linkify
 import android.util.AttributeSet
 import android.view.LayoutInflater
@@ -10,13 +11,20 @@ import androidx.core.text.method.LinkMovementMethodCompat
 import androidx.core.text.parseAsHtml
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
+import androidx.lifecycle.findViewTreeLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.github.libretube.R
 import com.github.libretube.api.SponsorBlockLabelHelper
+import com.github.libretube.api.innertube.NotSignedInException
+import com.github.libretube.api.innertube.YouTubeAccount
 import com.github.libretube.api.obj.Segment
 import com.github.libretube.api.obj.Streams
 import com.github.libretube.databinding.DescriptionLayoutBinding
 import com.github.libretube.enums.SbSkipOptions
 import com.github.libretube.extensions.formatShort
+import com.github.libretube.extensions.toastFromMainDispatcher
+import com.github.libretube.helpers.ThemeHelper
+import kotlinx.coroutines.launch
 import com.github.libretube.helpers.ClipboardHelper
 import com.github.libretube.helpers.PlayerHelper
 import com.github.libretube.ui.activities.VideoTagsAdapter
@@ -35,6 +43,15 @@ class DescriptionLayout(
 
     private val videoTagsAdapter = VideoTagsAdapter()
 
+    private var videoId: String? = null
+    private var currentRating = YouTubeAccount.Rating.NONE
+
+    /** Tint of an inactive rating icon, captured before any rating is applied. */
+    private val inactiveRatingTint = binding.textLike.currentTextColor
+    private val activeRatingTint by lazy {
+        ThemeHelper.getThemeColor(context, androidx.appcompat.R.attr.colorPrimary)
+    }
+
     init {
         binding.playerTitleLayout.setOnClickListener {
             toggleDescription()
@@ -44,7 +61,58 @@ class DescriptionLayout(
             true
         }
 
+        binding.textLike.setOnClickListener {
+            applyRating(
+                if (currentRating == YouTubeAccount.Rating.LIKE) YouTubeAccount.Rating.NONE
+                else YouTubeAccount.Rating.LIKE
+            )
+        }
+        binding.textDislike.setOnClickListener {
+            applyRating(
+                if (currentRating == YouTubeAccount.Rating.DISLIKE) YouTubeAccount.Rating.NONE
+                else YouTubeAccount.Rating.DISLIKE
+            )
+        }
+
         binding.tagsRecycler.adapter = videoTagsAdapter
+    }
+
+    /**
+     * Sends a rating for the current video to the signed-in YouTube account.
+     *
+     * The icon updates immediately and rolls back if the request fails, so a rejected rating never
+     * leaves the UI claiming something the account does not actually reflect.
+     */
+    private fun applyRating(rating: YouTubeAccount.Rating) {
+        val videoId = videoId ?: return
+        val scope = findViewTreeLifecycleOwner()?.lifecycleScope ?: return
+
+        val previousRating = currentRating
+        currentRating = rating
+        updateRatingIcons()
+
+        scope.launch {
+            val error = runCatching { YouTubeAccount.rate(context, videoId, rating) }
+                .exceptionOrNull() ?: return@launch
+
+            currentRating = previousRating
+            updateRatingIcons()
+            context.toastFromMainDispatcher(
+                if (error is NotSignedInException) R.string.youtube_sign_in_required
+                else R.string.youtube_action_failed
+            )
+        }
+    }
+
+    private fun updateRatingIcons() {
+        binding.textLike.compoundDrawableTintList = ColorStateList.valueOf(
+            if (currentRating == YouTubeAccount.Rating.LIKE) activeRatingTint
+            else inactiveRatingTint
+        )
+        binding.textDislike.compoundDrawableTintList = ColorStateList.valueOf(
+            if (currentRating == YouTubeAccount.Rating.DISLIKE) activeRatingTint
+            else inactiveRatingTint
+        )
     }
 
     fun setSegments(segments: List<Segment>) {
@@ -60,8 +128,13 @@ class DescriptionLayout(
     }
 
     @SuppressLint("SetTextI18n")
-    fun setStreams(streams: Streams) {
+    fun setStreams(streams: Streams, videoId: String) {
         this.streams = streams
+        this.videoId = videoId
+
+        // a rating belongs to a single video, so it must not carry over to the next one
+        currentRating = YouTubeAccount.Rating.NONE
+        updateRatingIcons()
 
         val views = streams.views.formatShort()
         val date = TextUtils.formatRelativeDate(streams.uploaded ?: -1L)

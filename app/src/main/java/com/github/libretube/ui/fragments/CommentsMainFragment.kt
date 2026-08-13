@@ -9,14 +9,19 @@ import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
 import androidx.fragment.app.replace
 import androidx.fragment.app.setFragmentResult
+import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.RecyclerView
 import com.github.libretube.R
+import com.github.libretube.api.innertube.NotSignedInException
+import com.github.libretube.api.innertube.YouTubeAccount
 import com.github.libretube.constants.IntentData
 import com.github.libretube.databinding.FragmentCommentsBinding
 import com.github.libretube.extensions.formatShort
+import com.github.libretube.extensions.toastFromMainDispatcher
+import kotlinx.coroutines.launch
 import com.github.libretube.helpers.NavigationHelper
 import com.github.libretube.ui.adapters.CommentsPagingAdapter
 import com.github.libretube.ui.models.CommentsViewModel
@@ -111,6 +116,51 @@ class CommentsMainFragment : Fragment(R.layout.fragment_comments) {
                 false,
                 getString(R.string.comments_count, commentCount.formatShort())
             )
+        }
+
+        setupCommentComposer(binding, commentPagingAdapter)
+    }
+
+    /**
+     * Shows the composer only for a signed-in account, since posting acts on the real YouTube
+     * account and there is nothing useful to offer when signed out.
+     */
+    private fun setupCommentComposer(
+        binding: FragmentCommentsBinding,
+        commentPagingAdapter: CommentsPagingAdapter
+    ) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            binding.commentComposer.isVisible = YouTubeAccount.isSignedIn(requireContext())
+        }
+
+        binding.postComment.setOnClickListener {
+            val videoId = viewModel.videoIdLiveData.value ?: return@setOnClickListener
+            val text = binding.commentInput.text.toString().trim()
+            if (text.isEmpty()) return@setOnClickListener
+
+            // block the composer for the duration of the request so a slow post can't be
+            // submitted twice
+            binding.postComment.isEnabled = false
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                val error = runCatching {
+                    YouTubeAccount.postComment(requireContext(), videoId, text)
+                }.exceptionOrNull()
+
+                binding.postComment.isEnabled = true
+
+                if (error == null) {
+                    binding.commentInput.text.clear()
+                    requireContext().toastFromMainDispatcher(R.string.comment_posted)
+                    // the new comment only appears once the list is re-fetched
+                    commentPagingAdapter.refresh()
+                } else {
+                    requireContext().toastFromMainDispatcher(
+                        if (error is NotSignedInException) R.string.youtube_sign_in_required
+                        else R.string.youtube_action_failed
+                    )
+                }
+            }
         }
     }
 

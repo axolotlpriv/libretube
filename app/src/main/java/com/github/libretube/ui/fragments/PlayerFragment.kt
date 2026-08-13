@@ -1128,7 +1128,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player), CustomPlayerCallback 
 
         viewModel.isOrientationChangeInProgress = false
 
-        binding.descriptionLayout.setStreams(streams)
+        binding.descriptionLayout.setStreams(streams, videoId)
 
         toggleVideoInfoVisibility(true)
 

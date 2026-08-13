@@ -7,6 +7,7 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.github.libretube.api.innertube.TvAuthStore
 import com.github.libretube.api.innertube.TvOAuth
+import com.github.libretube.api.innertube.YouTubeAccount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -46,6 +47,8 @@ class TvSignInDialog : DialogFragment() {
                     }
                     if (token != null) {
                         TvAuthStore(requireContext()).save(token)
+                        // drop the cached store so account actions see the new token at once
+                        YouTubeAccount.invalidate()
                         dialog.setMessage("Signed in!")
                         delay(1000)
                         dismiss()

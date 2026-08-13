@@ -8,6 +8,13 @@
     <string name="search_hint">Search</string>
     <string name="videos">Videos</string>
     <string name="subscribe">Subscribe</string>
+    <string name="youtube_sign_in_required">Sign in to YouTube under Settings → Instance first</string>
+    <string name="youtube_action_failed">Couldn\'t reach your YouTube account</string>
+    <string name="like">Like</string>
+    <string name="dislike">Dislike</string>
+    <string name="add_a_comment">Add a comment…</string>
+    <string name="comment_posted">Comment posted</string>
+    <string name="post">Post</string>
     <string name="unsubscribe">Unsubscribe</string>
     <string name="share">Share</string>
     <string name="download">Download</string>
