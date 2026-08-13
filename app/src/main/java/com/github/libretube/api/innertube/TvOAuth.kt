@@ -33,12 +33,17 @@ object TvOAuth {
     private const val CLIENT_ID = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com"
     private const val CLIENT_SECRET = "SboVhoG9s0rNafixCSGGKXAT"
 
-    private const val DEVICE_CODE_URL = "https://oauth2.googleapis.com/device/code"
-    private const val TOKEN_URL = "https://oauth2.googleapis.com/token"
+    // This client is provisioned against YouTube's own OAuth endpoints, not the generic Google
+    // ones. Posting to oauth2.googleapis.com instead returns 400 invalid_scope.
+    private const val DEVICE_CODE_URL = "https://www.youtube.com/o/oauth2/device/code"
+    private const val TOKEN_URL = "https://www.youtube.com/o/oauth2/token"
 
-    // Scopes needed for subscriptions, likes, comments, personalized feed.
-    private const val SCOPES = "https://www.googleapis.com/auth/youtube " +
-        "https://www.googleapis.com/auth/youtube.force-ssl"
+    // The only scope pair this client may request through the device flow. The YouTube Data API
+    // scopes (youtube / youtube.force-ssl) are rejected outright with
+    // "Invalid device flow scope", so the resulting token authenticates InnerTube requests as the
+    // account rather than granting Data API access.
+    private const val SCOPES = "http://gdata.youtube.com " +
+        "https://www.googleapis.com/auth/youtube-paid-content"
 
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
@@ -83,10 +88,21 @@ object TvOAuth {
             .build()
 
         client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("Device code request failed: ${resp.code}")
-            json.decodeFromString(resp.body!!.string())
+            val text = resp.body.string()
+            // the body carries Google's actual reason (invalid_scope, invalid_client, ...), which
+            // is the only thing that makes a rejection diagnosable
+            if (!resp.isSuccessful) {
+                throw IOException("Device code request failed (${resp.code}): ${describeError(text)}")
+            }
+            json.decodeFromString(text)
         }
     }
+
+    /** Pulls Google's error description out of an OAuth error body, falling back to the raw text. */
+    private fun describeError(body: String): String = runCatching {
+        val parsed = json.decodeFromString<TokenResponse>(body)
+        parsed.error ?: body
+    }.getOrDefault(body).take(300)
 
     /**
      * Step 2: poll this on a loop every `interval` seconds (from the device code
@@ -97,14 +113,16 @@ object TvOAuth {
         val body = FormBody.Builder()
             .add("client_id", CLIENT_ID)
             .add("client_secret", CLIENT_SECRET)
-            .add("device_code", deviceCode)
+            // this endpoint names the device code "code"; "device_code" is rejected with
+            // "Missing required parameter: code"
+            .add("code", deviceCode)
             .add("grant_type", "http://oauth.net/grant_type/device/1.0")
             .build()
 
         val request = Request.Builder().url(TOKEN_URL).post(body).build()
 
         client.newCall(request).execute().use { resp ->
-            val text = resp.body!!.string()
+            val text = resp.body.string()
             val parsed = json.decodeFromString<TokenResponse>(text)
 
             when {
@@ -132,8 +150,11 @@ object TvOAuth {
         val request = Request.Builder().url(TOKEN_URL).post(body).build()
 
         client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("Refresh failed: ${resp.code}")
-            val parsed = json.decodeFromString<TokenResponse>(resp.body!!.string())
+            val text = resp.body.string()
+            if (!resp.isSuccessful) {
+                throw IOException("Refresh failed (${resp.code}): ${describeError(text)}")
+            }
+            val parsed = json.decodeFromString<TokenResponse>(text)
             StoredToken(
                 accessToken = parsed.accessToken ?: throw IOException("No access_token in refresh response"),
                 refreshToken = refreshToken, // Google doesn't rotate this for this grant type
