@@ -42,7 +42,7 @@ class TvSignInDialog : DialogFragment() {
                     val token = try {
                         TvOAuth.pollForToken(deviceCode.deviceCode)
                     } catch (e: Exception) {
-                        dialog.setMessage("Sign-in failed: ${e.message}")
+                        dialog.setMessage("Sign-in failed: ${e.describe()}")
                         return@launch
                     }
                     if (token != null) {
@@ -57,10 +57,17 @@ class TvSignInDialog : DialogFragment() {
                 }
                 dialog.setMessage("Code expired, try again.")
             } catch (e: Exception) {
-                dialog.setMessage("Failed to start sign-in: ${e.message}")
+                dialog.setMessage("Failed to start sign-in: ${e.describe()}")
             }
         }
 
         return dialog
     }
+
+    /**
+     * Some exceptions carry no message at all, which previously surfaced to the user as the
+     * bare text "null". Fall back to the exception type so the report is always actionable.
+     */
+    private fun Throwable.describe(): String =
+        message?.takeIf { it.isNotBlank() } ?: this::class.java.simpleName
 }

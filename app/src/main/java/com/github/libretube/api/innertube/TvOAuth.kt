@@ -1,5 +1,7 @@
 package com.github.libretube.api.innertube
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -69,7 +71,7 @@ object TvOAuth {
     class AuthPendingException(val response: DeviceCodeResponse) : IOException()
 
     /** Step 1: kick off the flow. Show response.verificationUrl + response.userCode to the user. */
-    suspend fun requestDeviceCode(): DeviceCodeResponse {
+    suspend fun requestDeviceCode(): DeviceCodeResponse = withContext(Dispatchers.IO) {
         val body = FormBody.Builder()
             .add("client_id", CLIENT_ID)
             .add("scope", SCOPES)
@@ -82,7 +84,7 @@ object TvOAuth {
 
         client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("Device code request failed: ${resp.code}")
-            return json.decodeFromString(resp.body!!.string())
+            json.decodeFromString(resp.body!!.string())
         }
     }
 
@@ -91,7 +93,7 @@ object TvOAuth {
      * response) until it returns a StoredToken or throws. Returns null while the
      * user hasn't approved yet ("authorization_pending") -- keep polling.
      */
-    suspend fun pollForToken(deviceCode: String): StoredToken? {
+    suspend fun pollForToken(deviceCode: String): StoredToken? = withContext(Dispatchers.IO) {
         val body = FormBody.Builder()
             .add("client_id", CLIENT_ID)
             .add("client_secret", CLIENT_SECRET)
@@ -105,7 +107,7 @@ object TvOAuth {
             val text = resp.body!!.string()
             val parsed = json.decodeFromString<TokenResponse>(text)
 
-            return when {
+            when {
                 parsed.accessToken != null && parsed.refreshToken != null -> StoredToken(
                     accessToken = parsed.accessToken,
                     refreshToken = parsed.refreshToken,
@@ -119,7 +121,7 @@ object TvOAuth {
     }
 
     /** Refresh an expired access token using the stored refresh token. */
-    suspend fun refresh(refreshToken: String): StoredToken {
+    suspend fun refresh(refreshToken: String): StoredToken = withContext(Dispatchers.IO) {
         val body = FormBody.Builder()
             .add("client_id", CLIENT_ID)
             .add("client_secret", CLIENT_SECRET)
@@ -132,7 +134,7 @@ object TvOAuth {
         client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("Refresh failed: ${resp.code}")
             val parsed = json.decodeFromString<TokenResponse>(resp.body!!.string())
-            return StoredToken(
+            StoredToken(
                 accessToken = parsed.accessToken ?: throw IOException("No access_token in refresh response"),
                 refreshToken = refreshToken, // Google doesn't rotate this for this grant type
                 expiresAtEpochMs = System.currentTimeMillis() + (parsed.expiresIn ?: 3600) * 1000L

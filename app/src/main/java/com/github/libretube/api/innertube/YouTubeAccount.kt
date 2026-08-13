@@ -45,6 +45,9 @@ object YouTubeAccount {
         authStore = null
     }
 
+    /** Personalized home feed for the signed-in account. */
+    suspend fun getHomeFeed(context: Context) = api(context).getHomeFeed()
+
     suspend fun subscribe(context: Context, channelId: String) {
         api(context).subscribe(channelId)
     }

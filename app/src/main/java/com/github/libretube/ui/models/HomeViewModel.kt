@@ -8,9 +8,8 @@ import com.github.libretube.api.MediaServiceRepository
 import com.github.libretube.api.PlaylistsHelper
 import com.github.libretube.api.SubscriptionHelper
 import com.github.libretube.api.TrendingCategory
-import com.github.libretube.api.innertube.InnerTubeApi
 import com.github.libretube.api.innertube.InnerTubeFeedParser
-import com.github.libretube.api.innertube.TvAuthStore
+import com.github.libretube.api.innertube.YouTubeAccount
 import com.github.libretube.api.obj.Playlists
 import com.github.libretube.api.obj.StreamItem
 import com.github.libretube.constants.PreferenceKeys
@@ -149,8 +148,7 @@ class HomeViewModel : ViewModel() {
     }
 
     private suspend fun loadRecommended(context: Context) {
-        val authStore = TvAuthStore(context)
-        if (!authStore.isLoggedIn()) {
+        if (!YouTubeAccount.isSignedIn(context)) {
             // clear any rows left over from a previous session, without re-notifying observers
             // when the row is already empty
             if (recommended.value != null) recommended.value = null
@@ -159,7 +157,7 @@ class HomeViewModel : ViewModel() {
         runSafely(
             onSuccess = { videos -> recommended.updateIfChanged(videos) },
             ioBlock = {
-                val response = InnerTubeApi(authStore).getHomeFeed()
+                val response = YouTubeAccount.getHomeFeed(context)
                 InnerTubeFeedParser.parseHomeFeed(response)
             }
         )
